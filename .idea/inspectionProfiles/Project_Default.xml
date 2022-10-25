@@ -1,0 +1,27 @@
+<component name="InspectionProjectProfileManager">
+  <profile version="1.0">
+    <option name="myName" value="Project Default" />
+    <inspection_tool class="DjangoUnresolvedLoadInspection" enabled="false" level="WARNING" enabled_by_default="false" />
+    <inspection_tool class="DjangoUnresolvedTemplateReferenceInspection" enabled="false" level="WARNING" enabled_by_default="false" />
+    <inspection_tool class="JSHint" enabled="true" level="ERROR" enabled_by_default="true" />
+    <inspection_tool class="PyPackageRequirementsInspection" enabled="true" level="WARNING" enabled_by_default="true">
+      <option name="ignoredPackages">
+        <value>
+          <list size="11">
+            <item index="0" class="java.lang.String" itemvalue="celery" />
+            <item index="1" class="java.lang.String" itemvalue="stripe" />
+            <item index="2" class="java.lang.String" itemvalue="asgiref" />
+            <item index="3" class="java.lang.String" itemvalue="urllib3" />
+            <item index="4" class="java.lang.String" itemvalue="elasticsearch" />
+            <item index="5" class="java.lang.String" itemvalue="elasticsearch-dsl" />
+            <item index="6" class="java.lang.String" itemvalue="django-elasticsearch-dsl" />
+            <item index="7" class="java.lang.String" itemvalue="pandas" />
+            <item index="8" class="java.lang.String" itemvalue="opencv-python" />
+            <item index="9" class="java.lang.String" itemvalue="Flask-Bcrypt" />
+            <item index="10" class="java.lang.String" itemvalue="psycopg2-binary" />
+          </list>
+        </value>
+      </option>
+    </inspection_tool>
+  </profile>
+</component>
