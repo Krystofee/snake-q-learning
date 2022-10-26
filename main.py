@@ -10,13 +10,16 @@ from torch import nn
 from torch import optim
 from torch.nn import functional as F
 
+SHOULD_RENDER = True
+
 plt.ion()
+
 
 def render_rect(canvas, x, y, width, height, color):
     canvas.create_rectangle(x, y, x + width, y + height, fill=color)
 
 
-def plot(scores, mean_scores):
+def plot(scores, mean_scores, randomness_list):
     display.clear_output(wait=True)
     display.display(plt.gcf())
     plt.clf()
@@ -25,9 +28,11 @@ def plot(scores, mean_scores):
     plt.ylabel('Score')
     plt.plot(scores)
     plt.plot(mean_scores)
+    plt.plot(randomness_list)
     plt.ylim(ymin=0)
     plt.text(len(scores)-1, scores[-1], str(scores[-1]))
     plt.text(len(mean_scores)-1, mean_scores[-1], str(mean_scores[-1]))
+    plt.text(len(randomness_list)-1, randomness_list[-1], str(randomness_list[-1]))
     plt.show(block=False)
     plt.pause(.1)
 
@@ -82,21 +87,26 @@ class Apple:
 
 
 class SnakeGame:
-    SIZE_Y = 24
-    SIZE_X = 32
+    SIZE_Y = 20
+    SIZE_X = 20
     BLOCK_SIZE = 20
+    MAX_STEPS_WITHOUT_EAT_UNTIL_GAMEOVER = 1000
 
     def __init__(self, tk, agent):
         self.agent = agent
 
-        self.master = tk
-        self.master.title("Snake AI")
-        self.master.geometry(f"{self.SIZE_X*self.BLOCK_SIZE}x{self.SIZE_Y*self.BLOCK_SIZE}+1000+100")
-        self.master.resizable(False, False)
-        self.master.configure(bg="black")
+        if tk:
+            self.master = tk
+            self.master.title("Snake AI")
+            self.master.geometry(f"{self.SIZE_X*self.BLOCK_SIZE}x{self.SIZE_Y*self.BLOCK_SIZE}+1000+100")
+            self.master.resizable(False, False)
+            self.master.configure(bg="black")
 
-        self.canvas = Canvas(self.master, width=self.SIZE_X*self.BLOCK_SIZE, height=self.SIZE_Y*self.BLOCK_SIZE, bg="black")
-        self.canvas.pack()
+            self.canvas = Canvas(self.master, width=self.SIZE_X*self.BLOCK_SIZE, height=self.SIZE_Y*self.BLOCK_SIZE, bg="black")
+            self.canvas.pack()
+        else:
+            self.master = None
+            self.canvas = None
 
         self.reset()
 
@@ -156,20 +166,24 @@ class SnakeGame:
         if x < 0 or x >= self.SIZE_X or y < 0 or y >= self.SIZE_Y:
             return True
 
-        for position in self.snake.positions:
-            if x == position[0] and y == position[1]:
-                return True
+        if self.check_snake_collision(x, y):
+            return True
 
         return False
 
+    def check_snake_collision(self, x, y):
+        for position in self.snake.positions:
+            if x == position[0] and y == position[1]:
+                return True
+        return False
+
     def render(self):
-        self.canvas.delete("all")
-
-        for apple in self.apples:
-            apple.render()
-
-        self.snake.render()
-        self.canvas.create_text(10, 10, text=f"Score: {self.score}", fill="white", anchor="nw")
+        if self.master:
+            self.canvas.delete("all")
+            for apple in self.apples:
+                apple.render()
+            self.snake.render()
+            self.canvas.create_text(10, 10, text=f"Score: {self.score}", fill="white", anchor="nw")
 
     def is_game_over(self):
         # Check snake wall collision
@@ -180,7 +194,7 @@ class SnakeGame:
         if self.snake.check_collision():
             return True
 
-        if self.steps_since_eaten_last_apple > 500:
+        if self.steps_since_eaten_last_apple > self.MAX_STEPS_WITHOUT_EAT_UNTIL_GAMEOVER:
             return True
 
         return False
@@ -256,23 +270,40 @@ class DQNAgent:
     MAX_MEMORY = 100_000
     BATCH_SIZE = 1_000
     LEARNING_RATE = 0.001
-    MAX_RANDOMNESS = 100
+    MAX_RANDOMNESS = 50
 
     def __init__(self):
         self.games_played = 0
         self.epsilon = 0
         self.gamma = 0.9
         self.memory = deque(maxlen=self.MAX_MEMORY)
-        self.model = Network(11, 256, 3)
+        self.model = Network(19, 256, 3)
         self.trainer = Trainer(self.model, learning_rate=self.LEARNING_RATE, gamma=self.gamma)
 
     def get_state(self, game):
         snake_head = game.snake.positions[0]
 
         # Detect danger in the direction of snake
-        danger_forward = game.check_collision(snake_head[0] + game.snake.direction[0], snake_head[1] + game.snake.direction[1])
-        danger_left = game.check_collision(snake_head[0] - game.snake.direction[1], snake_head[1] + game.snake.direction[0])
-        danger_right = game.check_collision(snake_head[0] + game.snake.direction[1], snake_head[1] - game.snake.direction[0])
+        danger_1_forward = game.check_collision(snake_head[0] + game.snake.direction[0], snake_head[1] + game.snake.direction[1])
+        danger_1_left = game.check_collision(snake_head[0] - game.snake.direction[1], snake_head[1] + game.snake.direction[0])
+        danger_1_right = game.check_collision(snake_head[0] + game.snake.direction[1], snake_head[1] - game.snake.direction[0])
+
+        danger_directions = (
+            (1, 0),
+            (1, 1),
+            (0, 1),
+            (-1, 1),
+            (-1, 0),
+            (-1, -1),
+            (0, -1),
+            (1, -1),
+        )
+        dangers = []
+        for danger_dir in danger_directions:
+            danger = False
+            for n in range(1, 3):
+                danger |= game.check_snake_collision(snake_head[0] + danger_dir[0] * n, snake_head[1] + danger_dir[1] * n)
+            dangers.append(danger)
 
         # Snake direction
         direction_up = game.snake.direction == DIRECTION_UP
@@ -282,6 +313,7 @@ class DQNAgent:
 
         # Detect apple direction
         apple_direction = [0, 0, 0, 0]  # up, down, left, right
+
         if game.apples:
             apple = game.apples[0]
             if apple.y < snake_head[1]:
@@ -293,11 +325,13 @@ class DQNAgent:
             elif apple.x > snake_head[0]:
                 apple_direction[3] = 1
 
-        # State size is: 11
+        # State size is: 1171
         state = [
-            int(danger_forward),
-            int(danger_left),
-            int(danger_right),
+            int(danger_1_forward),
+            int(danger_1_left),
+            int(danger_1_right),
+
+            *dangers,
 
             int(direction_up),
             int(direction_down),
@@ -329,13 +363,10 @@ class DQNAgent:
     def train_short_memory(self, state, action, reward, next_state, is_game_over):
         self.trainer.train(state, action, reward, next_state, is_game_over)
 
-    def get_action(self, state):
-        # Needs to be improved, to not be 0 even after many games
-        self.epsilon = self.MAX_RANDOMNESS - self.games_played
-
+    def get_action(self, state, randomness=0):
         final_move = [0, 0, 0]
 
-        if random.randint(0, 200) < self.epsilon:
+        if random.random() < randomness:
             move = random.randint(0, 1)
             final_move[move] = 1
         else:
@@ -347,12 +378,14 @@ class DQNAgent:
         return final_move
 
 
-def train_loop(tk, game, agent, record, total_score, plot_scores, plot_mean_scores):
+def train_loop(tk, game, agent, record, total_score, plot_scores, plot_mean_scores, randomness_list):
     # Get old state
     state_old = agent.get_state(game)
 
     # Get move
-    final_move = agent.get_action(state_old)
+    coeff_until_game_over = game.steps_since_eaten_last_apple / game.MAX_STEPS_WITHOUT_EAT_UNTIL_GAMEOVER  # 0..1
+    randomness = (1 / ((agent.games_played + 1) / 2) + coeff_until_game_over / 4) / max(game.score - 5, 1)
+    final_move = agent.get_action(state_old, randomness)
 
     # Perform move and get new state
     reward, is_game_over, score = game.play_step(final_move)
@@ -381,19 +414,27 @@ def train_loop(tk, game, agent, record, total_score, plot_scores, plot_mean_scor
         total_score += score
         mean_score = total_score / agent.games_played
         plot_mean_scores.append(mean_score)
+        randomness_list.append(randomness)
+        plot(plot_scores, plot_mean_scores, randomness_list)
 
-        plot(plot_scores, plot_mean_scores)
-
-    tk.after(10, lambda: train_loop(tk, game, agent, record, total_score, plot_scores, plot_mean_scores))
+    if SHOULD_RENDER:
+        tk.after(10, lambda: train_loop(tk, game, agent, record, total_score, plot_scores, plot_mean_scores, randomness_list))
+    else:
+        train_loop(tk, game, agent, record, total_score, plot_scores, plot_mean_scores, randomness_list)
 
 
 def train(tk):
     agent = DQNAgent()
     game = SnakeGame(tk, agent)
-    train_loop(tk, game, agent, 0, 0, [], [])
+    train_loop(tk, game, agent, 0, 0, [], [], [])
 
 
 if __name__ == '__main__':
-    tk = Tk()
-    tk.after(1000, lambda: train(tk))
-    tk.mainloop()
+    if SHOULD_RENDER:
+        tk = Tk()
+        tk.after(1000, lambda: train(tk))
+        tk.mainloop()
+    else:
+        import sys
+        sys.setrecursionlimit(100000)
+        train(None)
