@@ -4,13 +4,18 @@ from collections import deque
 from tkinter import *
 
 import matplotlib.pyplot as plt
+import numpy as np
 import torch
 from IPython import display
 from torch import nn
 from torch import optim
 from torch.nn import functional as F
 
-SHOULD_RENDER = True
+from agents.cnn_dqn import CNNDQNAgent
+from agents.simple_dqn import SimpleDQNAgent
+from contants import GAME_SIZE
+
+SHOULD_RENDER = False
 
 plt.ion()
 
@@ -19,7 +24,7 @@ def render_rect(canvas, x, y, width, height, color):
     canvas.create_rectangle(x, y, x + width, y + height, fill=color)
 
 
-def plot(scores, mean_scores, randomness_list):
+def plot(scores, mean_scores, randomness_list, reward_sum_list):
     display.clear_output(wait=True)
     display.display(plt.gcf())
     plt.clf()
@@ -29,18 +34,14 @@ def plot(scores, mean_scores, randomness_list):
     plt.plot(scores)
     plt.plot(mean_scores)
     plt.plot(randomness_list)
-    plt.ylim(ymin=0)
+    plt.plot(reward_sum_list)
+    plt.ylim(ymin=-1)
     plt.text(len(scores)-1, scores[-1], str(scores[-1]))
     plt.text(len(mean_scores)-1, mean_scores[-1], str(mean_scores[-1]))
     plt.text(len(randomness_list)-1, randomness_list[-1], str(randomness_list[-1]))
+    plt.text(len(reward_sum_list)-1, reward_sum_list[-1], str(reward_sum_list[-1]))
     plt.show(block=False)
     plt.pause(.1)
-
-
-DIRECTION_UP = (0, -1)
-DIRECTION_DOWN = (0, 1)
-DIRECTION_LEFT = (-1, 0)
-DIRECTION_RIGHT = (1, 0)
 
 
 class Snake:
@@ -87,8 +88,6 @@ class Apple:
 
 
 class SnakeGame:
-    SIZE_Y = 20
-    SIZE_X = 20
     BLOCK_SIZE = 20
     MAX_STEPS_WITHOUT_EAT_UNTIL_GAMEOVER = 1000
 
@@ -98,11 +97,11 @@ class SnakeGame:
         if tk:
             self.master = tk
             self.master.title("Snake AI")
-            self.master.geometry(f"{self.SIZE_X*self.BLOCK_SIZE}x{self.SIZE_Y*self.BLOCK_SIZE}+1000+100")
+            self.master.geometry(f"{GAME_SIZE[0]*self.BLOCK_SIZE}x{GAME_SIZE[1]*self.BLOCK_SIZE}+1000+100")
             self.master.resizable(False, False)
             self.master.configure(bg="black")
 
-            self.canvas = Canvas(self.master, width=self.SIZE_X*self.BLOCK_SIZE, height=self.SIZE_Y*self.BLOCK_SIZE, bg="black")
+            self.canvas = Canvas(self.master, width=GAME_SIZE[0]*self.BLOCK_SIZE, height=GAME_SIZE[1]*self.BLOCK_SIZE, bg="black")
             self.canvas.pack()
         else:
             self.master = None
@@ -111,25 +110,45 @@ class SnakeGame:
         self.reset()
 
     def reset(self):
+        self.pixels_memory = deque(maxlen=4)
+        self.pixels_memory.append(np.zeros((GAME_SIZE[0], GAME_SIZE[1]), dtype=np.uint8))
+        self.pixels_memory.append(np.zeros((GAME_SIZE[0], GAME_SIZE[1]), dtype=np.uint8))
+        self.pixels_memory.append(np.zeros((GAME_SIZE[0], GAME_SIZE[1]), dtype=np.uint8))
+        self.pixels_memory.append(np.zeros((GAME_SIZE[0], GAME_SIZE[1]), dtype=np.uint8))
+
         self.steps_since_eaten_last_apple = 0
-        self.snake = Snake(self.canvas, self.SIZE_X // 2, self.SIZE_Y // 2, self.BLOCK_SIZE)
+        self.snake = Snake(self.canvas, GAME_SIZE[0] // 2, GAME_SIZE[1] // 2, self.BLOCK_SIZE)
         self.apples = []
         self.randomly_place_apple()
         self.render()
+
+    @staticmethod
+    def get_point_distance(x1, y1, x2, y2):
+        return np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
 
     def play_step(self, move):
         start_score = self.score
         reward = 0
 
+        start_distance = self.get_point_distance(self.snake.positions[0][0], self.snake.positions[0][1], self.apples[0].x, self.apples[0].y)
+
         self.update(move)
+        self.update_pixels_memory()
         self.render()
+
+        end_distance = self.get_point_distance(self.snake.positions[0][0], self.snake.positions[0][1], self.apples[0].x, self.apples[0].y)
 
         is_game_over = False
         if self.is_game_over():
             is_game_over = True
-            reward = -10
-        elif start_score < self.score:
-            reward = 10
+            reward -= 10
+        else:
+            # if end_distance < start_distance:
+            #     reward += 1
+            # if end_distance > start_distance:
+            #     reward -= 1
+            if start_score < self.score:
+                reward += 10
 
         return (reward, is_game_over, self.score)
 
@@ -156,14 +175,14 @@ class SnakeGame:
 
     def randomly_place_apple(self):
         if len(self.apples) < 1:
-            coords = (random.randint(0, self.SIZE_X - 1), random.randint(0, self.SIZE_Y - 1))
+            coords = (random.randint(0, GAME_SIZE[0] - 1), random.randint(0, GAME_SIZE[1] - 1))
             for apple in self.apples:
                 if apple.x == coords[0] and apple.y == coords[1]:
                     self.randomly_place_apple()
             self.apples.append(Apple(self.canvas, *coords, self.BLOCK_SIZE))
 
     def check_collision(self, x, y):
-        if x < 0 or x >= self.SIZE_X or y < 0 or y >= self.SIZE_Y:
+        if x < 0 or x >= GAME_SIZE[0] or y < 0 or y >= GAME_SIZE[1]:
             return True
 
         if self.check_snake_collision(x, y):
@@ -187,7 +206,7 @@ class SnakeGame:
 
     def is_game_over(self):
         # Check snake wall collision
-        if self.snake.positions[0][0] < 0 or self.snake.positions[0][0] >= self.SIZE_X or self.snake.positions[0][1] < 0 or self.snake.positions[0][1] >= self.SIZE_Y:
+        if self.snake.positions[0][0] < 0 or self.snake.positions[0][0] >= GAME_SIZE[0] or self.snake.positions[0][1] < 0 or self.snake.positions[0][1] >= GAME_SIZE[1]:
             return True
 
         # Check snake self collision
@@ -203,182 +222,25 @@ class SnakeGame:
     def score(self):
         return len(self.snake.positions) - 3
 
+    def update_pixels_memory(self):
+        self.pixels_memory.append(self.get_pixels())
 
-class Network(nn.Module):
-    def __init__(self, input_size, hidden_size, output_size):
-        super().__init__()
-        self.input_linear = nn.Linear(input_size, hidden_size)
-        self.output_linear = nn.Linear(hidden_size, output_size)
+    def get_pixels(self):
+        pixels = np.zeros((GAME_SIZE[0], GAME_SIZE[1]), dtype=np.uint8)
 
-    def forward(self, x):
-        x = F.relu(self.input_linear(x))
-        x = self.output_linear(x)
-        return x
+        try:
+            for position in self.snake.positions:
+                pixels[position[0]][position[1]] = 1
+        except IndexError:
+            pass
 
-    def save(self, file_name='model.pth'):
-        model_folder_path = './model'
-        if not os.path.exists(model_folder_path):
-            os.makedirs(model_folder_path)
+        for apple in self.apples:
+            pixels[apple.x][apple.y] = 1
 
-        file_name = os.path.join(model_folder_path, file_name)
-        torch.save(self.state_dict(), file_name)
+        return pixels
 
 
-class Trainer:
-    def __init__(self, network, learning_rate=0.001, gamma=0.9):
-        self.network = network
-        self.optimizer = optim.Adam(network.parameters(), lr=learning_rate)
-        self.gamma = gamma
-        self.criterion = nn.MSELoss()
-
-    def train(self, state, action, reward, next_state, is_game_over):
-        state = torch.tensor(state, dtype=torch.float)
-        next_state = torch.tensor(next_state, dtype=torch.float)
-        action = torch.tensor(action, dtype=torch.long)
-        reward = torch.tensor(reward, dtype=torch.float)
-        # (n, x)
-
-        if len(state.shape) == 1:
-            # (1, x)
-            state = torch.unsqueeze(state, 0)
-            next_state = torch.unsqueeze(next_state, 0)
-            action = torch.unsqueeze(action, 0)
-            reward = torch.unsqueeze(reward, 0)
-            is_game_over = (is_game_over, )
-
-        # 1: predicted Q values with current state
-        pred = self.network(state)
-
-        target = pred.clone()
-        for idx in range(len(is_game_over)):
-            Q_new = reward[idx]
-            if not is_game_over[idx]:
-                Q_new = reward[idx] + self.gamma * torch.max(self.network(next_state[idx]))
-            target[idx][torch.argmax(action[idx]).item()] = Q_new
-
-        # 2: Q_new = r + y * max(next_predicted Q value) -> only do this if not is_game_over
-        # pred.clone()
-        # preds[argmax(action)] = Q_new
-        self.optimizer.zero_grad()
-        loss = self.criterion(target, pred)
-        loss.backward()
-
-        self.optimizer.step()
-
-
-class DQNAgent:
-    MAX_MEMORY = 100_000
-    BATCH_SIZE = 1_000
-    LEARNING_RATE = 0.001
-    MAX_RANDOMNESS = 50
-
-    def __init__(self):
-        self.games_played = 0
-        self.epsilon = 0
-        self.gamma = 0.9
-        self.memory = deque(maxlen=self.MAX_MEMORY)
-        self.model = Network(19, 256, 3)
-        self.trainer = Trainer(self.model, learning_rate=self.LEARNING_RATE, gamma=self.gamma)
-
-    def get_state(self, game):
-        snake_head = game.snake.positions[0]
-
-        # Detect danger in the direction of snake
-        danger_1_forward = game.check_collision(snake_head[0] + game.snake.direction[0], snake_head[1] + game.snake.direction[1])
-        danger_1_left = game.check_collision(snake_head[0] - game.snake.direction[1], snake_head[1] + game.snake.direction[0])
-        danger_1_right = game.check_collision(snake_head[0] + game.snake.direction[1], snake_head[1] - game.snake.direction[0])
-
-        danger_directions = (
-            (1, 0),
-            (1, 1),
-            (0, 1),
-            (-1, 1),
-            (-1, 0),
-            (-1, -1),
-            (0, -1),
-            (1, -1),
-        )
-        dangers = []
-        for danger_dir in danger_directions:
-            danger = False
-            for n in range(1, 3):
-                danger |= game.check_snake_collision(snake_head[0] + danger_dir[0] * n, snake_head[1] + danger_dir[1] * n)
-            dangers.append(danger)
-
-        # Snake direction
-        direction_up = game.snake.direction == DIRECTION_UP
-        direction_down = game.snake.direction == DIRECTION_DOWN
-        direction_left = game.snake.direction == DIRECTION_LEFT
-        direction_right = game.snake.direction == DIRECTION_RIGHT
-
-        # Detect apple direction
-        apple_direction = [0, 0, 0, 0]  # up, down, left, right
-
-        if game.apples:
-            apple = game.apples[0]
-            if apple.y < snake_head[1]:
-                apple_direction[0] = 1
-            elif apple.y > snake_head[1]:
-                apple_direction[1] = 1
-            if apple.x < snake_head[0]:
-                apple_direction[2] = 1
-            elif apple.x > snake_head[0]:
-                apple_direction[3] = 1
-
-        # State size is: 1171
-        state = [
-            int(danger_1_forward),
-            int(danger_1_left),
-            int(danger_1_right),
-
-            *dangers,
-
-            int(direction_up),
-            int(direction_down),
-            int(direction_left),
-            int(direction_right),
-
-            *apple_direction,
-        ]
-
-        # def print_state(state):
-        #     print("danger", int(state[0]), int(state[1]), int(state[2]), "direction", int(state[3]), int(state[4]), int(state[5]), int(state[6]), "apple", state[7], state[8], state[9], state[10])
-        #
-        # print_state(state)
-
-        return state
-
-    def remember(self, state, action, reward, next_state, is_game_over):
-        self.memory.append((state, action, reward, next_state, is_game_over))
-
-    def train_long_memory(self):
-        if len(self.memory) > self.BATCH_SIZE:
-            mini_sample = random.sample(self.memory, self.BATCH_SIZE)
-        else:
-            mini_sample = self.memory
-
-        state, action, reward, next_state, is_game_over = zip(*mini_sample)
-        self.trainer.train(state, action, reward, next_state, is_game_over)
-
-    def train_short_memory(self, state, action, reward, next_state, is_game_over):
-        self.trainer.train(state, action, reward, next_state, is_game_over)
-
-    def get_action(self, state, randomness=0):
-        final_move = [0, 0, 0]
-
-        if random.random() < randomness:
-            move = random.randint(0, 1)
-            final_move[move] = 1
-        else:
-            state0 = torch.tensor(state, dtype=torch.float)
-            prediction = self.model(state0)
-            move = torch.argmax(prediction).item()
-            final_move[move] = 1
-
-        return final_move
-
-
-def train_loop(tk, game, agent, record, total_score, plot_scores, plot_mean_scores, randomness_list):
+def train_loop(tk, game, agent, record, total_score, plot_scores, plot_mean_scores, randomness_list, reward_sum, reward_sum_list):
     # Get old state
     state_old = agent.get_state(game)
 
@@ -389,6 +251,7 @@ def train_loop(tk, game, agent, record, total_score, plot_scores, plot_mean_scor
 
     # Perform move and get new state
     reward, is_game_over, score = game.play_step(final_move)
+    reward_sum += reward
     state_new = agent.get_state(game)
 
     # Train short memory
@@ -408,25 +271,28 @@ def train_loop(tk, game, agent, record, total_score, plot_scores, plot_mean_scor
             record = score
             agent.model.save()
 
-        print('Game', agent.games_played, 'Score', score, 'Record:', record, "Reward", reward)
+        print('Game', agent.games_played, 'Score', score, 'Record:', record, "Reward", reward_sum)
 
         plot_scores.append(score)
         total_score += score
         mean_score = total_score / agent.games_played
         plot_mean_scores.append(mean_score)
         randomness_list.append(randomness)
-        plot(plot_scores, plot_mean_scores, randomness_list)
+        reward_sum_list.append(reward_sum / 100)
+        plot(plot_scores, plot_mean_scores, randomness_list, reward_sum_list)
+        reward_sum = 0
 
     if SHOULD_RENDER:
-        tk.after(10, lambda: train_loop(tk, game, agent, record, total_score, plot_scores, plot_mean_scores, randomness_list))
+        tk.after(10, lambda: train_loop(tk, game, agent, record, total_score, plot_scores, plot_mean_scores, randomness_list, reward_sum, reward_sum_list))
     else:
-        train_loop(tk, game, agent, record, total_score, plot_scores, plot_mean_scores, randomness_list)
+        return tk, game, agent, record, total_score, plot_scores, plot_mean_scores, randomness_list, reward_sum, reward_sum_list
 
 
 def train(tk):
-    agent = DQNAgent()
+    # agent = CNNDQNAgent()
+    agent = SimpleDQNAgent()
     game = SnakeGame(tk, agent)
-    train_loop(tk, game, agent, 0, 0, [], [], [])
+    return train_loop(tk, game, agent, 0, 0, [], [], [], 0, [])
 
 
 if __name__ == '__main__':
@@ -435,6 +301,7 @@ if __name__ == '__main__':
         tk.after(1000, lambda: train(tk))
         tk.mainloop()
     else:
-        import sys
-        sys.setrecursionlimit(100000)
-        train(None)
+        args = train(None)
+
+        while True:
+            train_loop(*args)
