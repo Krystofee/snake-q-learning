@@ -1,6 +1,8 @@
 import torch
 from torch import optim, nn
 
+from config import device
+
 
 class Trainer:
     def __init__(self, network, learning_rate=0.001, gamma=0.9):
@@ -10,10 +12,10 @@ class Trainer:
         self.criterion = nn.MSELoss()
 
     def train(self, state, action, reward, next_state, is_game_over):
-        state = torch.tensor(state, dtype=torch.float)
-        next_state = torch.tensor(next_state, dtype=torch.float)
-        action = torch.tensor(action, dtype=torch.long)
-        reward = torch.tensor(reward, dtype=torch.float)
+        state = torch.tensor(state, dtype=torch.float, device=device)
+        next_state = torch.tensor(next_state, dtype=torch.float, device=device)
+        action = torch.tensor(action, dtype=torch.long, device=device)
+        reward = torch.tensor(reward, dtype=torch.float, device=device)
         # (n, x)
 
         if len(state.shape) == 1:
@@ -44,10 +46,10 @@ class Trainer:
         self.optimizer.step()
 
     def train_short_term(self, state, action, reward, next_state, is_game_over):
-        tensor_state = torch.tensor(state, dtype=torch.float)
-        tensor_next_state = torch.tensor(next_state, dtype=torch.float)
-        tensor_action = torch.tensor(action, dtype=torch.long)
-        tensor_reward = torch.tensor(reward, dtype=torch.float)
+        tensor_state = torch.tensor(state, dtype=torch.float, device=device)
+        tensor_next_state = torch.tensor(next_state, dtype=torch.float, device=device)
+        tensor_action = torch.tensor(action, dtype=torch.long, device=device)
+        tensor_reward = torch.tensor(reward, dtype=torch.float, device=device)
 
         # 1: predicted Q values with current state
         pred = self.network(tensor_state)
@@ -68,10 +70,10 @@ class Trainer:
         self.optimizer.step()
 
     def train_long_term(self, state, action, reward, next_state, is_game_over):
-        state = torch.tensor(state, dtype=torch.float)
-        next_state = torch.tensor(next_state, dtype=torch.float)
-        action = torch.tensor(action, dtype=torch.long)
-        reward = torch.tensor(reward, dtype=torch.float)
+        state = torch.tensor(state, dtype=torch.float, device=device)
+        next_state = torch.tensor(next_state, dtype=torch.float, device=device)
+        action = torch.tensor(action, dtype=torch.long, device=device)
+        reward = torch.tensor(reward, dtype=torch.float, device=device)
 
         # 1: predicted Q values with current state
         pred = self.network(state)

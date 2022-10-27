@@ -1,13 +1,12 @@
 import os
 import random
 from collections import deque
-from copy import copy
 
 import numpy as np
 import torch
 from torch import nn
 
-from contants import GAME_SIZE
+from config import device
 from trainer import Trainer
 
 DIRECTION_UP = (0, -1)
@@ -20,17 +19,18 @@ class CNNDQNetwork(nn.Module):
     def __init__(self, output_size):
         super().__init__()
         self.network = nn.Sequential(
-            nn.Conv2d(4, 16, kernel_size=(8, 8), stride=(4, 4), padding=7),
+            nn.Conv2d(2, 16, kernel_size=(3, 3), stride=(1, 1), padding=1),
             nn.ReLU(),
             # nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2)),
-            nn.Conv2d(16, 32, kernel_size=(4, 4), stride=(2, 2), padding=3),
+            nn.Conv2d(16, 32, kernel_size=(3, 3), stride=(1, 1), padding=2),
             nn.ReLU(),
-            # nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2)),
+            nn.Conv2d(32, 64, kernel_size=(5, 5), stride=(1, 1), padding=4),
+            nn.ReLU(),
             nn.Flatten(0, -1),
-            nn.Linear(512, 256),
-            nn.ReLU(),
-            nn.Linear(256, output_size)
-        )
+            # nn.Linear(9216, 64),
+            # nn.ReLU(),
+            nn.Linear(30976, output_size),
+        ).to(device)
 
     def forward(self, x):
         return self.network(x)
@@ -45,8 +45,8 @@ class CNNDQNetwork(nn.Module):
 
 
 class CNNDQNAgent:
-    MAX_MEMORY = 100000
-    BATCH_SIZE = 10000
+    MAX_MEMORY = 1_000_000
+    BATCH_SIZE = 64
     LEARNING_RATE = 0.001
 
     def __init__(self):
@@ -54,11 +54,11 @@ class CNNDQNAgent:
         self.epsilon = 0
         self.gamma = 0.9
         self.memory = deque(maxlen=self.MAX_MEMORY)
-        self.model = CNNDQNetwork(3)
+        self.model = CNNDQNetwork(4)
         self.trainer = Trainer(self.model, learning_rate=self.LEARNING_RATE, gamma=self.gamma)
 
     def get_state(self, game):
-        return list(game.pixels_memory)
+        return np.array(game.pixels_memory)
 
     def remember(self, state, action, reward, next_state, is_game_over):
         self.memory.append((state, action, reward, next_state, is_game_over))
@@ -69,20 +69,24 @@ class CNNDQNAgent:
         else:
             mini_sample = self.memory
 
-        for state, action, reward, next_state, is_game_over in mini_sample:
-            self.trainer.train_short_term(state, action, reward, next_state, is_game_over)
+        # for state, action, reward, next_state, is_game_over in mini_sample:
+        for args in mini_sample:
+            self.trainer.train_short_term(*args)
+
+        # state, action, reward, next_state, is_game_over = zip(*mini_sample)
+        # self.trainer.train_long_term(state, action, reward, next_state, is_game_over)
 
     def train_short_memory(self, state, action, reward, next_state, is_game_over):
         self.trainer.train_short_term(state, action, reward, next_state, is_game_over)
 
     def get_action(self, state, randomness=0):
-        final_move = [0, 0, 0]
+        final_move = [0, 0, 0, 0]  # UP, DOWN, LEFT, RIGHT
 
         if random.random() < randomness:
-            move = random.randint(0, 1)
+            move = random.randint(0, 3)
             final_move[move] = 1
         else:
-            state0 = torch.tensor(state, dtype=torch.float)
+            state0 = torch.tensor(state, dtype=torch.float, device=device)
             prediction = self.model(state0)
             move = torch.argmax(prediction).item()
             final_move[move] = 1

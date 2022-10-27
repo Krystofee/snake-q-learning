@@ -1,19 +1,14 @@
-import os
 import random
 from collections import deque
 from tkinter import *
 
 import matplotlib.pyplot as plt
 import numpy as np
-import torch
 from IPython import display
-from torch import nn
-from torch import optim
-from torch.nn import functional as F
 
 from agents.cnn_dqn import CNNDQNAgent
 from agents.simple_dqn import SimpleDQNAgent
-from contants import GAME_SIZE
+from config import GAME_SIZE
 
 SHOULD_RENDER = False
 
@@ -34,12 +29,12 @@ def plot(scores, mean_scores, randomness_list, reward_sum_list):
     plt.plot(scores)
     plt.plot(mean_scores)
     plt.plot(randomness_list)
-    plt.plot(reward_sum_list)
-    plt.ylim(ymin=-1)
+    # plt.plot(reward_sum_list)
+    plt.ylim(ymin=0)
     plt.text(len(scores)-1, scores[-1], str(scores[-1]))
     plt.text(len(mean_scores)-1, mean_scores[-1], str(mean_scores[-1]))
     plt.text(len(randomness_list)-1, randomness_list[-1], str(randomness_list[-1]))
-    plt.text(len(reward_sum_list)-1, reward_sum_list[-1], str(reward_sum_list[-1]))
+    # plt.text(len(reward_sum_list)-1, reward_sum_list[-1], str(reward_sum_list[-1]))
     plt.show(block=False)
     plt.pause(.1)
 
@@ -67,6 +62,22 @@ class Snake:
 
     def move_right(self):
         self.direction = (self.direction[1] * -1, self.direction[0])
+        self.move_forward()
+
+    def move_absolute_up(self):
+        self.direction = (0, -1)
+        self.move_forward()
+
+    def move_absolute_down(self):
+        self.direction = (0, 1)
+        self.move_forward()
+
+    def move_absolute_left(self):
+        self.direction = (-1, 0)
+        self.move_forward()
+
+    def move_absolute_right(self):
+        self.direction = (1, 0)
         self.move_forward()
 
     def grow(self):
@@ -110,16 +121,22 @@ class SnakeGame:
         self.reset()
 
     def reset(self):
-        self.pixels_memory = deque(maxlen=4)
-        self.pixels_memory.append(np.zeros((GAME_SIZE[0], GAME_SIZE[1]), dtype=np.uint8))
-        self.pixels_memory.append(np.zeros((GAME_SIZE[0], GAME_SIZE[1]), dtype=np.uint8))
-        self.pixels_memory.append(np.zeros((GAME_SIZE[0], GAME_SIZE[1]), dtype=np.uint8))
-        self.pixels_memory.append(np.zeros((GAME_SIZE[0], GAME_SIZE[1]), dtype=np.uint8))
 
         self.steps_since_eaten_last_apple = 0
-        self.snake = Snake(self.canvas, GAME_SIZE[0] // 2, GAME_SIZE[1] // 2, self.BLOCK_SIZE)
+        self.snake = Snake(self.canvas, GAME_SIZE[0] // 2 - 3, GAME_SIZE[1] // 2, self.BLOCK_SIZE)
         self.apples = []
         self.randomly_place_apple()
+
+        self.pixels_memory = deque(maxlen=2)
+
+        self.pixels_memory.append(self.get_pixels())
+        self.snake.move_absolute_right()
+        self.pixels_memory.append(self.get_pixels())
+        self.snake.move_absolute_right()
+        self.pixels_memory.append(self.get_pixels())
+        self.snake.move_absolute_right()
+        self.pixels_memory.append(self.get_pixels())
+
         self.render()
 
     @staticmethod
@@ -141,14 +158,14 @@ class SnakeGame:
         is_game_over = False
         if self.is_game_over():
             is_game_over = True
-            reward -= 10
+            reward -= 1
         else:
             # if end_distance < start_distance:
-            #     reward += 1
+            #     reward += 0.1
             # if end_distance > start_distance:
-            #     reward -= 1
+            #     reward -= 0.1
             if start_score < self.score:
-                reward += 10
+                reward += 1
 
         return (reward, is_game_over, self.score)
 
@@ -162,14 +179,26 @@ class SnakeGame:
                 self.snake.grow()
                 self.apples.remove(apple)
 
-        if move[0]:
-            self.snake.move_forward()
-        elif move[1]:
-            self.snake.move_left()
-        elif move[2]:
-            self.snake.move_right()
-        else:
-            raise Exception("Invalid move")
+        if len(move) == 3:
+            if move[0]:
+                self.snake.move_forward()
+            elif move[1]:
+                self.snake.move_left()
+            elif move[2]:
+                self.snake.move_right()
+            else:
+                raise Exception("Invalid move")
+        if len(move) == 4:
+            if move[0]:
+                self.snake.move_absolute_up()
+            elif move[1]:
+                self.snake.move_absolute_left()
+            elif move[2]:
+                self.snake.move_absolute_down()
+            elif move[3]:
+                self.snake.move_absolute_right()
+            else:
+                raise Exception("Invalid move")
 
         self.randomly_place_apple()
 
@@ -245,8 +274,9 @@ def train_loop(tk, game, agent, record, total_score, plot_scores, plot_mean_scor
     state_old = agent.get_state(game)
 
     # Get move
-    coeff_until_game_over = game.steps_since_eaten_last_apple / game.MAX_STEPS_WITHOUT_EAT_UNTIL_GAMEOVER  # 0..1
-    randomness = (1 / ((agent.games_played + 1) / 2) + coeff_until_game_over / 4) / max(game.score - 5, 1)
+    # coeff_until_game_over = game.steps_since_eaten_last_apple / game.MAX_STEPS_WITHOUT_EAT_UNTIL_GAMEOVER  # 0..1
+    # randomness = (1 / ((agent.games_played + 1) / 2) + coeff_until_game_over / 4) / max(game.score - 5, 1) / 5
+    randomness = 0.1
     final_move = agent.get_action(state_old, randomness)
 
     # Perform move and get new state
@@ -271,14 +301,14 @@ def train_loop(tk, game, agent, record, total_score, plot_scores, plot_mean_scor
             record = score
             agent.model.save()
 
-        print('Game', agent.games_played, 'Score', score, 'Record:', record, "Reward", reward_sum)
+        print('Game', agent.games_played, 'Score', score, 'Record:', record, "Reward", reward_sum, len(agent.memory))
 
         plot_scores.append(score)
         total_score += score
         mean_score = total_score / agent.games_played
         plot_mean_scores.append(mean_score)
         randomness_list.append(randomness)
-        reward_sum_list.append(reward_sum / 100)
+        reward_sum_list.append(reward_sum)
         plot(plot_scores, plot_mean_scores, randomness_list, reward_sum_list)
         reward_sum = 0
 
@@ -289,8 +319,8 @@ def train_loop(tk, game, agent, record, total_score, plot_scores, plot_mean_scor
 
 
 def train(tk):
-    # agent = CNNDQNAgent()
-    agent = SimpleDQNAgent()
+    agent = CNNDQNAgent()
+    # agent = SimpleDQNAgent()
     game = SnakeGame(tk, agent)
     return train_loop(tk, game, agent, 0, 0, [], [], [], 0, [])
 
@@ -304,4 +334,4 @@ if __name__ == '__main__':
         args = train(None)
 
         while True:
-            train_loop(*args)
+            args = train_loop(*args)

@@ -6,6 +6,7 @@ import torch
 from torch import nn
 from torch.functional import F
 
+from config import device
 from trainer import Trainer
 
 
@@ -13,9 +14,6 @@ DIRECTION_UP = (0, -1)
 DIRECTION_DOWN = (0, 1)
 DIRECTION_LEFT = (-1, 0)
 DIRECTION_RIGHT = (1, 0)
-
-
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
 class SimpleDQNetwork(nn.Module):
@@ -40,13 +38,13 @@ class SimpleDQNetwork(nn.Module):
 
 class SimpleDQNAgent:
     MAX_MEMORY = 100_000
-    BATCH_SIZE = 1_000
+    BATCH_SIZE = 5_000
     LEARNING_RATE = 0.001
 
     def __init__(self):
         self.games_played = 0
         self.epsilon = 0
-        self.gamma = 0.9
+        self.gamma = 0.95
         self.memory = deque(maxlen=self.MAX_MEMORY)
         self.model = SimpleDQNetwork(19, 256, 3)
         self.trainer = Trainer(self.model, learning_rate=self.LEARNING_RATE, gamma=self.gamma)
@@ -141,7 +139,7 @@ class SimpleDQNAgent:
             move = random.randint(0, 1)
             final_move[move] = 1
         else:
-            state0 = torch.tensor(state, dtype=torch.float)
+            state0 = torch.tensor(state, dtype=torch.float, device=device)
             prediction = self.model(state0)
             move = torch.argmax(prediction).item()
             final_move[move] = 1
