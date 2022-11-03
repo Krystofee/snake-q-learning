@@ -19,17 +19,18 @@ class CNNDQNetwork(nn.Module):
     def __init__(self, output_size):
         super().__init__()
         self.network = nn.Sequential(
-            nn.Conv2d(2, 16, kernel_size=(3, 3), stride=(1, 1), padding=1),
+            nn.Conv2d(2, 16, kernel_size=(3, 3), stride=(1, 1)),
             nn.ReLU(),
-            # nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2)),
-            nn.Conv2d(16, 32, kernel_size=(3, 3), stride=(1, 1), padding=2),
+            nn.Conv2d(16, 32, kernel_size=(3, 3), stride=(1, 1)),
             nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=(5, 5), stride=(1, 1), padding=4),
+            nn.Conv2d(32, 64, kernel_size=(3, 3), stride=(1, 1)),
             nn.ReLU(),
-            nn.Flatten(0, -1),
-            # nn.Linear(9216, 64),
+            # nn.Conv2d(32, 64, kernel_size=(5, 5), stride=(1, 1), padding=1),
             # nn.ReLU(),
-            nn.Linear(30976, output_size),
+            nn.Flatten(0, -1),
+            nn.Linear(6400, 256),
+            nn.ReLU(),
+            nn.Linear(256, output_size),
         ).to(device)
 
     def forward(self, x):
@@ -45,8 +46,8 @@ class CNNDQNetwork(nn.Module):
 
 
 class CNNDQNAgent:
-    MAX_MEMORY = 1_000_000
-    BATCH_SIZE = 64
+    MAX_MEMORY = 10000
+    BATCH_SIZE = 128
     LEARNING_RATE = 0.001
 
     def __init__(self):

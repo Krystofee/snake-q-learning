@@ -10,7 +10,7 @@ from agents.cnn_dqn import CNNDQNAgent
 from agents.simple_dqn import SimpleDQNAgent
 from config import GAME_SIZE
 
-SHOULD_RENDER = False
+SHOULD_RENDER = True
 
 plt.ion()
 
@@ -147,25 +147,25 @@ class SnakeGame:
         start_score = self.score
         reward = 0
 
-        start_distance = self.get_point_distance(self.snake.positions[0][0], self.snake.positions[0][1], self.apples[0].x, self.apples[0].y)
+        # start_distance = self.get_point_distance(self.snake.positions[0][0], self.snake.positions[0][1], self.apples[0].x, self.apples[0].y)
 
         self.update(move)
         self.update_pixels_memory()
         self.render()
 
-        end_distance = self.get_point_distance(self.snake.positions[0][0], self.snake.positions[0][1], self.apples[0].x, self.apples[0].y)
+        # end_distance = self.get_point_distance(self.snake.positions[0][0], self.snake.positions[0][1], self.apples[0].x, self.apples[0].y)
 
         is_game_over = False
         if self.is_game_over():
             is_game_over = True
-            reward -= 1
+            reward -= 10
         else:
             # if end_distance < start_distance:
             #     reward += 0.1
             # if end_distance > start_distance:
             #     reward -= 0.1
             if start_score < self.score:
-                reward += 1
+                reward += 10
 
         return (reward, is_game_over, self.score)
 
